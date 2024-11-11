@@ -17,7 +17,6 @@ import Url exposing (Url)
 -- TODO: infantry (light, heavy, and paratrooper) can't move from an engaged position to another engaged position
 -- TODO: implement infantry capture
 -- TODO: implement artillery capture
--- TODO: reinforcement
 
 
 type alias Model =
