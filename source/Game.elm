@@ -75,7 +75,7 @@ startingBoard =
 
 init : Flags -> Url -> Nav.Key -> ( Model, Cmd Msg )
 init flags url navKey =
-    ( updateBombardmentPositions
+    ( updateCalculatedBoardData
         { board = startingBoard
         , turn = BluesTurn First
         , potentialMoves = Set.empty
@@ -136,6 +136,13 @@ updateBombardmentPositions model =
     }
 
 
+updateCalculatedBoardData : Model -> Model
+updateCalculatedBoardData model =
+    model
+        |> updatePotentialMoves
+        |> updateBombardmentPositions
+
+
 startEngine : Posix -> Msg
 startEngine time =
     StartEngine
@@ -146,20 +153,11 @@ executeEngine model =
     Task.perform ComputerMove (nextMove model)
 
 
-updatePositionClicked : Position -> Model -> ( Model, Cmd Msg )
-updatePositionClicked position model =
-    let
-        nextModel =
-            processMouseUp position model
-    in
-    ( updateBombardmentPositions nextModel, Cmd.none )
-
-
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         PositionClicked position ->
-            updatePositionClicked position model
+            ( processClicked position model |> updateCalculatedBoardData, Cmd.none )
 
         StartEngine ->
             ( { model | computerThinking = True }, executeEngine model )
@@ -167,7 +165,7 @@ update msg model =
         ComputerMove maybeMove ->
             case maybeMove of
                 Just ( srcPosition, destPosition ) ->
-                    ( processMove srcPosition destPosition model, Cmd.none )
+                    ( processMove srcPosition destPosition model |> updateCalculatedBoardData, Cmd.none )
 
                 Nothing ->
                     ( { model | gameOver = True }, Cmd.none )
@@ -181,14 +179,9 @@ clearSelected model =
     { model | selected = NoSelection }
 
 
-setSelected : Selection -> Model -> Model
-setSelected selection model =
-    { model | selected = selection }
-
-
-clearMoves : Model -> Model
-clearMoves model =
-    { model | potentialMoves = Set.empty }
+setSelectedPosition : Position -> Model -> Model
+setSelectedPosition position model =
+    { model | selected = SelectedPosition position }
 
 
 squareSize =
@@ -204,17 +197,12 @@ squareSize =
 
 determineMoves : Position -> Model -> Set ( Int, Int )
 determineMoves position model =
-    validMoves position model |> List.filterMap positionToMaybeCoordinate |> Set.fromList
-
-
-positionToMaybeCoordinate : Position -> Maybe ( Int, Int )
-positionToMaybeCoordinate position =
-    case position of
-        OnBoard coordinate ->
-            Just ( coordinate.x, coordinate.y )
-
-        _ ->
-            Nothing
+    let
+        toTuple : Coordinate -> ( Int, Int )
+        toTuple coordinate =
+            ( coordinate.x, coordinate.y )
+    in
+    validMoves position model |> List.map toTuple |> Set.fromList
 
 
 updatePotentialMoves : Model -> Model
@@ -223,70 +211,51 @@ updatePotentialMoves model =
         SelectedPosition position ->
             { model | potentialMoves = determineMoves position model }
 
-        _ ->
-            model
+        NoSelection ->
+            { model | potentialMoves = Set.empty }
 
 
-processMove : Position -> Position -> Model -> Model
+processMove : Position -> Coordinate -> Model -> Model
 processMove src dest model =
     let
         updatedGameModel =
             updateGame ( src, dest ) model
     in
-    updateBombardmentPositions
-        ({ updatedGameModel | computerThinking = False }
-            |> clearSelected
-            |> clearMoves
-        )
+    { updatedGameModel | computerThinking = False }
+        |> clearSelected
+        |> updateCalculatedBoardData
 
 
-processMouseUp : Position -> Model -> Model
-processMouseUp position model =
-    let
-        gameSquare =
-            getGameSquare position model.board
-    in
-    case model.selected of
-        SelectedPosition selectedPosition ->
-            if position == selectedPosition then
-                clearSelected model |> clearMoves
+processClicked : Position -> Model -> Model
+processClicked position model =
+    if model.selected == SelectedPosition position then
+        clearSelected model
 
-            else
-                case gameSquare of
-                    Just squareValue ->
-                        case squareValue of
+    else
+        case position of
+            Reinforcement _ _ ->
+                setSelectedPosition position model
+
+            OnBoard coordinate ->
+                case getGameSquare coordinate model.board of
+                    Just square ->
+                        case square of
                             Vacant ->
-                                model
+                                if Set.member ( coordinate.x, coordinate.y ) model.potentialMoves then
+                                    applyMove ( position, coordinate ) model
 
-                            Occupied player piece ->
+                                else
+                                    model
+
+                            Occupied player _ ->
                                 if player == Blue then
-                                    model |> setSelected (SelectedPosition position) |> updatePotentialMoves
+                                    setSelectedPosition position model
 
                                 else
                                     model
 
                     Nothing ->
                         model
-
-        NoSelection ->
-            case gameSquare of
-                Just squareValue ->
-                    case squareValue of
-                        Vacant ->
-                            model
-
-                        Occupied player piece ->
-                            if (player == Blue) && bluesTurn model.turn then
-                                model |> setSelected position |> updatePotentialMoves
-
-                            else if (player == Red) && not (bluesTurn model.turn) then
-                                model |> setSelected position |> updatePotentialMoves
-
-                            else
-                                model
-
-                Nothing ->
-                    model
 
 
 bluesTurn : Turn -> Bool
@@ -304,47 +273,69 @@ px value =
     String.fromInt value ++ "px"
 
 
-tile : Model -> Int -> Int -> Html Msg
-tile model xPos yPos =
+viewTile : Model -> Position -> GameSquare -> Html Msg
+viewTile model position square =
     let
-        xStr =
-            (xPos * squareSize) |> px
-
-        yStr =
-            (yPos * squareSize) |> px
-
-        position =
-            OnBoard { x = xPos, y = yPos }
-
         background =
-            if underBombardmentByPlayer Red position model then
-                "#FF5555"
+            case position of
+                OnBoard coordinate ->
+                    if underBombardmentByPlayer Red coordinate model then
+                        "#FF5555"
 
-            else if underBombardmentByPlayer Blue position model then
-                "#5555FF"
+                    else if underBombardmentByPlayer Blue coordinate model then
+                        "#5555FF"
 
-            else
-                "white"
+                    else
+                        "white"
+
+                _ ->
+                    "white"
 
         borderStyle =
             if model.selected == SelectedPosition position then
-                "4px solid #0000FF"
+                "4px solid #5495B6"
 
             else
-                "1px solid black"
+                case position of
+                    OnBoard c ->
+                        if Set.member ( c.x, c.y ) model.potentialMoves then
+                            "4px dotted red"
+
+                        else
+                            "1px solid black"
+
+                    _ ->
+                        "1px solid black"
+
+        ( content, textColor ) =
+            case square of
+                Vacant ->
+                    ( [ text "o" ], "transparent" )
+
+                Occupied player piece ->
+                    ( [ text (pieceToCharacter piece) ]
+                    , if player == Blue then
+                        "blue"
+
+                      else
+                        "red"
+                    )
     in
-    span
+    div
         [ onClick (PositionClicked position)
+        , style "cursor" "pointer"
+
+        -- TODO: implement images
+        --, Html.Attributes.src (chooseImage player piece)
         , style "background" background
         , style "border" borderStyle
         , style "width" (px squareSize)
         , style "height" (px squareSize)
         , style "text-align" "center"
-        , style "position" "absolute"
-        , style "left" xStr
-        , style "top" yStr
+        , style "display" "inline-block"
+        , style "color" textColor
         ]
-        []
+        content
 
 
 
@@ -404,48 +395,6 @@ pieceToCharacter piece =
             "X"
 
 
-renderPiece : Model -> Player -> Piece -> Position -> Html Msg
-renderPiece model player piece position =
-    let
-        borderStyle =
-            if model.selected == SelectedPosition position then
-                "4px solid #5495B6"
-
-            else
-                case position of
-                    OnBoard c ->
-                        if Set.member ( c.x, c.y ) model.potentialMoves then
-                            "4px dotted red"
-
-                        else
-                            ""
-
-                    _ ->
-                        ""
-    in
-    -- TODO: implement images
-    --Html.img
-    div
-        [ onClick (PositionClicked position)
-
-        --, Html.Attributes.src (chooseImage player piece)
-        , style "cursor" "grab"
-        , style "width" (px squareSize)
-        , style "height" (px squareSize)
-        , style "position" "absolute"
-        , style "color"
-            (if player == Blue then
-                "blue"
-
-             else
-                "red"
-            )
-        , style "border" borderStyle
-        ]
-        [ text (pieceToCharacter piece)
-        ]
-
-
 type alias File =
     List ( Position, GameSquare )
 
@@ -466,7 +415,6 @@ evaluators =
     , space
 
     --, ( isolatedArtillery, -0.5 )
-    , center
     , threats
     ]
 
@@ -500,47 +448,18 @@ performEval model =
         |> List.foldr (+) 0.0
 
 
-centerPredicate : Player -> ( Position, GameSquare ) -> Bool
-centerPredicate player tuple =
-    let
-        ( position, gameSquare ) =
-            tuple
-    in
-    case gameSquare of
-        Occupied p _ ->
-            (position.x == 3 || position.x == 4) && (position.y == 3 || position.y == 4)
-
-        _ ->
-            False
-
-
-center : Player -> Model -> Moves -> Float
-center player model moves =
-    let
-        playerInCenter =
-            findPiecesBy (centerPredicate player) model.board |> List.length
-
-        v =
-            toFloat playerInCenter
-
-        weight =
-            0.5
-    in
-    v * weight
-
-
-occupiedBy : Player -> Board -> Position -> Maybe Position
-occupiedBy player board position =
+occupiedBy : Player -> Board -> Coordinate -> Maybe Position
+occupiedBy player board coordinate =
     let
         maybeGameSquare =
-            getGameSquare position board
+            getGameSquare coordinate board
     in
     case maybeGameSquare of
         Just value ->
             case value of
                 Occupied p _ ->
                     if p == player then
-                        Just position
+                        Just (OnBoard coordinate)
 
                     else
                         Nothing
@@ -724,8 +643,8 @@ priceOfPiece piece =
             500
 
 
-pieceTotalPrice : Player -> Model -> Float
-pieceTotalPrice player model =
+pieceTotalPrice : Player -> Model -> Moves -> Float
+pieceTotalPrice player model moves =
     let
         pieces =
             piecesByPlayer player model
@@ -1089,27 +1008,33 @@ onHomeRow player coordinate =
 --            accum
 
 
-setGameSquare : Coordinate -> GameSquare -> Board -> Board
-setGameSquare coordinate gameSquare board =
+setGameSquare : Coordinate -> GameSquare -> Model -> Model
+setGameSquare coordinate gameSquare model =
     let
+        board =
+            model.board
+
         maybeColumn =
             Array.get coordinate.y board
-    in
-    case maybeColumn of
-        Just column ->
-            let
-                maybeSquare =
-                    Array.get coordinate.x column
-            in
-            case maybeSquare of
-                Just destSquare ->
-                    Array.set coordinate.y (Array.set coordinate.x gameSquare column) board
+
+        newBoard =
+            case maybeColumn of
+                Just column ->
+                    let
+                        maybeSquare =
+                            Array.get coordinate.x column
+                    in
+                    case maybeSquare of
+                        Just destSquare ->
+                            Array.set coordinate.y (Array.set coordinate.x gameSquare column) board
+
+                        Nothing ->
+                            board
 
                 Nothing ->
                     board
-
-        Nothing ->
-            board
+    in
+    { model | board = newBoard }
 
 
 coordinateToString : Coordinate -> String
@@ -1242,8 +1167,8 @@ homeRow player =
 validMoves : Position -> Model -> List Coordinate
 validMoves position model =
     case position of
-        Reinforcement player ->
-            homeRow player
+        Reinforcement player _ ->
+            homeRow player |> filterOnlyVacant model
 
         OnBoard coordinate ->
             case getGameSquare coordinate model.board of
@@ -1307,11 +1232,6 @@ filterDoNotEnterBombarded player model coordinates =
     List.filter (\p -> not (Set.member ( p.x, p.y ) bombarded)) coordinates
 
 
-updateBoard : Board -> Model -> Model
-updateBoard board model =
-    { model | board = board }
-
-
 dropMaybe : Maybe GameSquare -> GameSquare
 dropMaybe gameSquare =
     case gameSquare of
@@ -1323,20 +1243,35 @@ dropMaybe gameSquare =
 
 
 updateGame : Move -> Model -> Model
-updateGame ( src, dest ) model =
+updateGame ( from, to ) model =
     let
-        destSquare =
-            getGameSquare dest model.board |> dropMaybe
+        newSquare =
+            case from of
+                OnBoard fromCoordinate ->
+                    getGameSquare fromCoordinate model.board |> dropMaybe
 
-        srcSquare =
-            getGameSquare src model.board |> dropMaybe
-
-        updatedBoard =
-            setGameSquare dest srcSquare model.board
-                |> setGameSquare src Vacant
+                Reinforcement player piece ->
+                    Occupied player piece
     in
-    updateBoard updatedBoard model
+    model
+        |> setVacant from
+        |> setGameSquare to newSquare
         |> nextTurn
+
+
+setVacant : Position -> Model -> Model
+setVacant position model =
+    case position of
+        Reinforcement player piece ->
+            case player of
+                Red ->
+                    { model | redReinforcements = List.filter (\x -> x /= piece) model.redReinforcements }
+
+                Blue ->
+                    { model | blueReinforcements = List.filter (\x -> x /= piece) model.blueReinforcements }
+
+        OnBoard coordinate ->
+            setGameSquare coordinate Vacant model
 
 
 
@@ -1462,7 +1397,7 @@ type alias Board =
 
 type Position
     = OnBoard Coordinate
-    | Reinforcement Player
+    | Reinforcement Player Piece
 
 
 type alias Coordinate =
@@ -1536,48 +1471,9 @@ logSize moves =
 
 
 type alias MoveToCompare =
-    { src : Position
-    , dest : Position
-    , srcSquare : Maybe GameSquare
+    { dest : Position
     , destSquare : Maybe GameSquare
     }
-
-
-moveComparison : MoveToCompare -> MoveToCompare -> Order
-moveComparison a b =
-    let
-        aDestSquare =
-            Maybe.withDefault Vacant a.destSquare
-
-        bDestSquare =
-            Maybe.withDefault Vacant b.destSquare
-    in
-    case aDestSquare of
-        Vacant ->
-            case bDestSquare of
-                Vacant ->
-                    EQ
-
-                _ ->
-                    LT
-
-        _ ->
-            case bDestSquare of
-                Vacant ->
-                    GT
-
-                _ ->
-                    EQ
-
-
-sortByAttacks : Player -> Model -> Moves -> Moves
-sortByAttacks player model moves =
-    let
-        targetSquares =
-            List.map (\( src, dest ) -> MoveToCompare src dest (getGameSquare src model.board) (getGameSquare dest model.board)) moves
-    in
-    List.sortWith moveComparison targetSquares
-        |> List.map (\mv -> ( mv.src, mv.dest ))
 
 
 nextMoves : Model -> Moves
@@ -1591,7 +1487,7 @@ nextMoves model =
                 BluesTurn _ ->
                     Blue
     in
-    allAvailableMoves player model |> sortByAttacks player model
+    allAvailableMoves player model
 
 
 stripMaybe : Maybe Move -> Move
@@ -1690,24 +1586,6 @@ abMax depth alpha beta model =
         abMaxHelper depth alpha beta model (nextMoves model)
 
 
-view : Model -> Document Msg
-view model =
-    { title = "Elm GHQ"
-    , body =
-        [ div
-            [ style "position" "relative"
-            , style "width" (px (squareSize * 8))
-            , style "margin-left" "auto"
-            , style "margin-right" "auto"
-            ]
-            [ div [ style "position" "relative", style "height" (px (squareSize * 2)) ] [ viewReinforcements model Red ]
-            , div [ style "position" "relative", style "height" (px (squareSize * 8)) ] [ viewBoard model ]
-            , div [ style "position" "relative", style "height" (px (squareSize * 2)) ] [ viewReinforcements model Blue ]
-            ]
-        ]
-    }
-
-
 viewReinforcements : Model -> Player -> Html Msg
 viewReinforcements model player =
     let
@@ -1719,18 +1597,39 @@ viewReinforcements model player =
                 Blue ->
                     model.blueReinforcements
 
-        foo x piece =
-            renderPiece model player piece (Reinforcement player)
+        foo piece =
+            viewTile model (Reinforcement player piece) (Occupied player piece)
     in
-    div [] (List.indexedMap foo pieces)
+    div [] (List.map foo pieces)
 
 
-viewRow : Row -> Html Msg
-viewRow row =
-    div [] (List.map viewSquare row)
+viewRow : Model -> Int -> Row -> Html Msg
+viewRow model y row =
+    let
+        foo : Int -> GameSquare -> Html Msg
+        foo x square =
+            viewTile model (OnBoard { x = x, y = y }) square
+    in
+    div [] (List.indexedMap foo (Array.toList row))
 
 
 viewBoard : Model -> Html Msg
 viewBoard model =
     div []
-        (List.map viewRow (Array.toList model.board))
+        (List.indexedMap (viewRow model) (Array.toList model.board))
+
+
+view : Model -> Document Msg
+view model =
+    { title = "Elm GHQ"
+    , body =
+        [ div
+            [ style "margin-left" "auto"
+            , style "margin-right" "auto"
+            ]
+            [ div [] [ viewReinforcements model Red ]
+            , div [ style "margin" "20px" ] [ viewBoard model ]
+            , div [] [ viewReinforcements model Blue ]
+            ]
+        ]
+    }
