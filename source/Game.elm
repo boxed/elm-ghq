@@ -14,7 +14,7 @@ import Url exposing (Url)
 
 
 -- TODO: a piece can't move twice in one player round
--- TODO: infantry can't move from an engaged position to another engaged position
+-- TODO: infantry (light, heavy, and paratrooper) can't move from an engaged position to another engaged position
 -- TODO: implement infantry capture
 -- TODO: implement artillery capture
 -- TODO: reinforcement
@@ -238,21 +238,24 @@ processClicked position model =
 
             OnBoard coordinate ->
                 case getGameSquare coordinate model.board of
-                    Just square ->
-                        case square of
-                            Vacant ->
-                                if Set.member ( coordinate.x, coordinate.y ) model.potentialMoves then
-                                    applyMove ( position, coordinate ) model
-
-                                else
+                    Just Vacant ->
+                        if Set.member ( coordinate.x, coordinate.y ) model.potentialMoves then
+                            case model.selected of
+                                NoSelection ->
                                     model
 
-                            Occupied player _ ->
-                                if player == Blue then
-                                    setSelectedPosition position model
+                                SelectedPosition selectedPosition ->
+                                    applyMove ( selectedPosition, coordinate ) model |> clearSelected
 
-                                else
-                                    model
+                        else
+                            model
+
+                    Just (Occupied player _) ->
+                        if player == Blue then
+                            setSelectedPosition position model
+
+                        else
+                            model
 
                     Nothing ->
                         model
@@ -676,11 +679,7 @@ toFlatIndexedList board =
 
 
 toPositionTuple : ( Int, GameSquare ) -> ( Position, GameSquare )
-toPositionTuple tuple =
-    let
-        ( index, gameSquare ) =
-            tuple
-    in
+toPositionTuple ( index, gameSquare ) =
     ( OnBoard { x = remainderBy 8 (index + 8), y = index // 8 }, gameSquare )
 
 
@@ -787,6 +786,9 @@ bombardedCoordinatesFromPiece ( position, square ) =
     let
         twoSteps direction p =
             [ direction p, direction (direction p) ]
+
+        threeSteps direction p =
+            [ direction p, direction (direction p), direction (direction (direction p)) ]
     in
     case position of
         OnBoard coordinate ->
@@ -796,11 +798,11 @@ bombardedCoordinatesFromPiece ( position, square ) =
                         Artillery _ facing ->
                             twoSteps (translateCoordinate facing) coordinate
 
-                        HeavyArtillery facing ->
-                            twoSteps (translateCoordinate facing) coordinate
-
                         ArmoredArtillery facing ->
                             twoSteps (translateCoordinate facing) coordinate
+
+                        HeavyArtillery facing ->
+                            threeSteps (translateCoordinate facing) coordinate
 
                         _ ->
                             []
@@ -877,18 +879,28 @@ shortMoves coordinate =
     ]
 
 
-longMoves : Coordinate -> List Coordinate
-longMoves coordinate =
-    shortMoves coordinate
-        ++ [ { x = coordinate.x - 2, y = coordinate.y - 2 }
-           , { x = coordinate.x - 2, y = coordinate.y - 0 }
-           , { x = coordinate.x - 2, y = coordinate.y + 2 }
-           , { x = coordinate.x - 0, y = coordinate.y - 2 }
-           , { x = coordinate.x - 0, y = coordinate.y + 2 }
-           , { x = coordinate.x + 2, y = coordinate.y - 2 }
-           , { x = coordinate.x + 2, y = coordinate.y - 0 }
-           , { x = coordinate.x + 2, y = coordinate.y + 2 }
-           ]
+longMoves : Model -> Coordinate -> List Coordinate
+longMoves model coordinate =
+    let
+        validShortMoves =
+            shortMoves coordinate |> filterOnlyVacant model
+
+        foo : Coordinate -> Coordinate
+        foo c =
+            let
+                diffX =
+                    c.x - coordinate.x
+
+                diffY =
+                    c.y - coordinate.y
+            in
+            { x = coordinate.x + diffX * 2, y = coordinate.y + diffY * 2 }
+
+        validLongMoves : List Coordinate
+        validLongMoves =
+            List.map foo validShortMoves
+    in
+    validShortMoves ++ validLongMoves
 
 
 isVacant : GameSquare -> Bool
@@ -916,18 +928,6 @@ filteringVacant board coordinate =
 
     else
         Nothing
-
-
-shortMovePositions : Player -> Coordinate -> Model -> List Coordinate
-shortMovePositions player coordinate model =
-    List.filter (\x -> underBombardmentByOpponentOfPlayer player x model)
-        (List.filterMap (filteringVacant model.board) (shortMoves coordinate))
-
-
-longMovePositions : Player -> Coordinate -> Model -> List Coordinate
-longMovePositions player coordinate model =
-    List.filter (\x -> underBombardmentByOpponentOfPlayer player x model)
-        (List.filterMap (filteringVacant model.board) (longMoves coordinate))
 
 
 unoccupiedSpacesNotUnderBombardmentByOpponent : Player -> Model -> List Coordinate
@@ -965,14 +965,13 @@ allUnoccupiedSpaces model =
         (List.filter (\( _, square ) -> isVacant square) allSquares)
 
 
-paratrooperMovePositions : Coordinate -> Player -> Model -> List Coordinate
-paratrooperMovePositions coordinate player model =
+paratrooperMoves : Coordinate -> Player -> Model -> List Coordinate
+paratrooperMoves coordinate player model =
     if onHomeRow player coordinate then
         unoccupiedSpacesNotUnderBombardmentByOpponent player model
 
     else
-        -- TODO: disallow engaged to engaged moves
-        shortMovePositions player coordinate model
+        shortMoves coordinate
 
 
 onHomeRow : Player -> Coordinate -> Bool
@@ -1127,11 +1126,7 @@ isOpponentPiece player piece board coordinate =
 
 
 validMovesPerPiece : Model -> ( Position, GameSquare ) -> List Move
-validMovesPerPiece model tuple =
-    let
-        ( position, gameSquare ) =
-            tuple
-    in
+validMovesPerPiece model ( position, gameSquare ) =
     validMoves position model
         |> List.map (\dest -> ( position, dest ))
 
@@ -1186,18 +1181,21 @@ validMoves position model =
                                 rawMoves =
                                     case piece of
                                         ArmoredInfantry _ ->
-                                            longMoves coordinate
+                                            longMoves model coordinate
 
                                         ArmoredArtillery _ ->
-                                            longMoves coordinate
+                                            longMoves model coordinate
 
                                         Paratrooper ->
-                                            paratrooperMovePositions coordinate player model
+                                            paratrooperMoves coordinate player model
 
                                         _ ->
                                             shortMoves coordinate
                             in
-                            rawMoves |> filterOutsideBoard |> filterOnlyVacant model |> filterDoNotEnterBombarded player model
+                            rawMoves
+                                |> filterOutsideBoard
+                                |> filterOnlyVacant model
+                                |> filterDoNotEnterBombarded player model
 
 
 
