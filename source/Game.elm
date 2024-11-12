@@ -13,7 +13,6 @@ import Url exposing (Url)
 
 
 
--- TODO: a piece can't move twice in one player round
 -- TODO: infantry (light, heavy, and paratrooper) can't move from an engaged position to another engaged position
 -- TODO: implement infantry capture
 -- TODO: implement artillery capture
@@ -30,6 +29,7 @@ type alias Model =
     , gameOver : Bool
     , redReinforcements : List Piece
     , blueReinforcements : List Piece
+    , hasMoved : Set CoordinateTuple
     }
 
 
@@ -85,6 +85,7 @@ init flags url navKey =
         , gameOver = False
         , redReinforcements = initialReinforcements S
         , blueReinforcements = initialReinforcements N
+        , hasMoved = Set.empty
         }
     , Cmd.none
     )
@@ -164,7 +165,7 @@ update msg model =
         ComputerMove maybeMove ->
             case maybeMove of
                 Just ( srcPosition, destPosition ) ->
-                    ( processMove srcPosition destPosition model |> updateCalculatedBoardData, Cmd.none )
+                    ( processMove srcPosition destPosition model, Cmd.none )
 
                 Nothing ->
                     ( { model | gameOver = True }, Cmd.none )
@@ -180,7 +181,7 @@ clearSelected model =
 
 setSelectedPosition : Position -> Model -> Model
 setSelectedPosition position model =
-    { model | selected = SelectedPosition position }
+    { model | selected = SelectedPosition position } |> updateCalculatedBoardData
 
 
 squareSize =
@@ -218,11 +219,17 @@ processMove : Position -> Coordinate -> Model -> Model
 processMove src dest model =
     let
         updatedGameModel =
-            updateGame ( src, dest ) model
+            applyMove ( src, dest ) model
     in
     { updatedGameModel | computerThinking = False }
         |> clearSelected
         |> updateCalculatedBoardData
+        |> markHasMoved dest
+
+
+markHasMoved : Coordinate -> Model -> Model
+markHasMoved coordinate model =
+    { model | hasMoved = Set.insert ( coordinate.x, coordinate.y ) model.hasMoved }
 
 
 processClicked : Position -> Model -> Model
@@ -236,28 +243,32 @@ processClicked position model =
                 setSelectedPosition position model
 
             OnBoard coordinate ->
-                case getGameSquare coordinate model.board of
-                    Just Vacant ->
-                        if Set.member ( coordinate.x, coordinate.y ) model.potentialMoves then
-                            case model.selected of
-                                NoSelection ->
-                                    model
+                if Set.member ( coordinate.x, coordinate.y ) model.hasMoved then
+                    model
 
-                                SelectedPosition selectedPosition ->
-                                    applyMove ( selectedPosition, coordinate ) model |> clearSelected
+                else
+                    case getGameSquare coordinate model.board of
+                        Just Vacant ->
+                            if Set.member ( coordinate.x, coordinate.y ) model.potentialMoves then
+                                case model.selected of
+                                    NoSelection ->
+                                        model
 
-                        else
+                                    SelectedPosition selectedPosition ->
+                                        processMove selectedPosition coordinate model |> clearSelected
+
+                            else
+                                model
+
+                        Just (Occupied player _) ->
+                            if player == Blue then
+                                setSelectedPosition position model
+
+                            else
+                                model
+
+                        Nothing ->
                             model
-
-                    Just (Occupied player _) ->
-                        if player == Blue then
-                            setSelectedPosition position model
-
-                        else
-                            model
-
-                    Nothing ->
-                        model
 
 
 bluesTurn : Turn -> Bool
@@ -286,6 +297,9 @@ viewTile model position square =
 
                     else if underBombardmentByPlayer Blue coordinate model then
                         "#5555FF"
+
+                    else if Set.member ( coordinate.x, coordinate.y ) model.hasMoved then
+                        "lightgray"
 
                     else
                         "white"
@@ -1239,8 +1253,8 @@ dropMaybe gameSquare =
             Vacant
 
 
-updateGame : Move -> Model -> Model
-updateGame ( from, to ) model =
+applyMove : Move -> Model -> Model
+applyMove ( from, to ) model =
     let
         newSquare =
             case from of
@@ -1291,28 +1305,24 @@ setVacant position model =
 
 nextTurn : Model -> Model
 nextTurn model =
-    let
-        newTurn =
-            case model.turn of
-                BluesTurn First ->
-                    BluesTurn Second
+    case model.turn of
+        BluesTurn First ->
+            { model | turn = BluesTurn Second }
 
-                BluesTurn Second ->
-                    BluesTurn Third
+        BluesTurn Second ->
+            { model | turn = BluesTurn Third }
 
-                BluesTurn Third ->
-                    RedsTurn First
+        BluesTurn Third ->
+            { model | turn = RedsTurn First, hasMoved = Set.empty }
 
-                RedsTurn First ->
-                    RedsTurn Second
+        RedsTurn First ->
+            { model | turn = RedsTurn Second }
 
-                RedsTurn Second ->
-                    RedsTurn Third
+        RedsTurn Second ->
+            { model | turn = RedsTurn Third }
 
-                RedsTurn Third ->
-                    BluesTurn First
-    in
-    { model | turn = newTurn }
+        RedsTurn Third ->
+            { model | turn = BluesTurn First, hasMoved = Set.empty }
 
 
 type Player
@@ -1451,11 +1461,6 @@ executeMin ( model, move ) ( bestScore, bestMove ) =
 dummyMove : Move
 dummyMove =
     ( OnBoard { x = 0, y = 0 }, { x = 0, y = 0 } )
-
-
-applyMove : Move -> Model -> Model
-applyMove move model =
-    updateGame move model
 
 
 logSize : Moves -> Moves
@@ -1614,6 +1619,10 @@ viewBoard : Model -> Html Msg
 viewBoard model =
     div []
         (List.indexedMap (viewRow model) (Array.toList model.board))
+
+
+
+-- TODO: debug data: show hasMoved
 
 
 view : Model -> Document Msg
