@@ -15,6 +15,49 @@
                 -moz-box-sizing: border-box;
                 -webkit-box-sizing: border-box;
             }
+
+            .selected {
+                border: 4px solid #5495B6
+            }
+
+            .potential-move {
+                border: 4px dotted red;
+            }
+
+            .plain-tile {
+                border: 1px solid black;
+            }
+
+            .red-bombardment {
+                background: #ff8282;
+            }
+
+            .blue-bombardment {
+                background: #5555FF;
+            }
+
+            .has-moved {
+                background: lightgray;
+            }
+
+            @media (prefers-color-scheme: dark) {
+                body {
+                    background: black;
+                    color: white;
+                }
+
+                .plain-tile {
+                    border: 1px solid gray;
+                }
+
+                .red-bombardment {
+                    background: #580101;
+                }
+
+                .blue-bombardment {
+                    background: #040474;
+                }
+            }
         </style>
     </head>
 

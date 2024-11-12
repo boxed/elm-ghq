@@ -188,13 +188,6 @@ squareSize =
     64
 
 
-
---
---fromFloatPair : ( Float, Float ) -> Position
---fromFloatPair ( x, y ) =
---    Position OnBoard (floor (x / squareSize)) (floor (y / squareSize))
-
-
 determineMoves : Position -> Model -> Set ( Int, Int )
 determineMoves position model =
     let
@@ -289,39 +282,39 @@ px value =
 viewTile : Model -> Position -> GameSquare -> Html Msg
 viewTile model position square =
     let
-        background =
+        backgroundClass =
             case position of
                 OnBoard coordinate ->
                     if underBombardmentByPlayer Red coordinate model then
-                        "#FF5555"
+                        "red-bombardment"
 
                     else if underBombardmentByPlayer Blue coordinate model then
-                        "#5555FF"
+                        "blue-bombardment"
 
                     else if Set.member ( coordinate.x, coordinate.y ) model.hasMoved then
-                        "lightgray"
+                        "has-moved"
 
                     else
-                        "white"
+                        ""
 
                 _ ->
-                    "white"
+                    ""
 
-        borderStyle =
+        borderClass =
             if model.selected == SelectedPosition position then
-                "4px solid #5495B6"
+                "selected"
 
             else
                 case position of
                     OnBoard c ->
                         if Set.member ( c.x, c.y ) model.potentialMoves then
-                            "4px dotted red"
+                            "potential-move"
 
                         else
-                            "1px solid black"
+                            "plain-tile"
 
                     _ ->
-                        "1px solid black"
+                        "plain-tile"
 
         ( content, textColor ) =
             case square of
@@ -343,13 +336,13 @@ viewTile model position square =
 
         -- TODO: implement images
         --, Html.Attributes.src (chooseImage player piece)
-        , style "background" background
-        , style "border" borderStyle
         , style "width" (px squareSize)
         , style "height" (px squareSize)
         , style "text-align" "center"
         , style "display" "inline-block"
         , style "color" textColor
+        , class borderClass
+        , class backgroundClass
         ]
         content
 
