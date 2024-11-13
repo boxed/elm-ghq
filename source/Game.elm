@@ -239,7 +239,7 @@ processClicked position model =
                     model
 
                 else
-                    case getGameSquare coordinate model.board of
+                    case getSquare coordinate model.board of
                         Just Vacant ->
                             if Set.member ( coordinate.x, coordinate.y ) model.potentialMoves then
                                 case model.selected of
@@ -278,7 +278,7 @@ px value =
     String.fromInt value ++ "px"
 
 
-viewTile : Model -> Position -> GameSquare -> Html Msg
+viewTile : Model -> Position -> Square -> Html Msg
 viewTile model position square =
     let
         bombardmentBackgroundClass =
@@ -414,7 +414,7 @@ pieceToCharacter piece =
 
 
 type alias File =
-    List ( Position, GameSquare )
+    List ( Position, Square )
 
 
 type alias EvaluatorFunc =
@@ -469,10 +469,10 @@ performEval model =
 occupiedBy : Player -> Board -> Coordinate -> Maybe Position
 occupiedBy player board coordinate =
     let
-        maybeGameSquare =
-            getGameSquare coordinate board
+        maybeSquare =
+            getSquare coordinate board
     in
-    case maybeGameSquare of
+    case maybeSquare of
         Just value ->
             case value of
                 Occupied p _ ->
@@ -518,7 +518,7 @@ yComparison a b =
 
 --file : Model -> Int -> File
 --file model index =
---    findPiecesBy (\( position, gameSquare ) -> position.x == index) model.board
+--    findPiecesBy (\( position, square ) -> position.x == index) model.board
 --        |> List.sortWith yComparison
 --
 --
@@ -527,7 +527,7 @@ yComparison a b =
 --    ( file model (fileIndex - 1), file model (fileIndex + 1) )
 --
 --
---toSetHelper : List ( Position, GameSquare ) -> Set Int -> Set Int
+--toSetHelper : List ( Position, Square ) -> Set Int -> Set Int
 --toSetHelper list set =
 --    let
 --        hd =
@@ -539,13 +539,13 @@ yComparison a b =
 --
 --        Nothing ->
 --            set
---toSet : List ( Position, GameSquare ) -> Set Int
+--toSet : List ( Position, Square ) -> Set Int
 --toSet list =
 --    toSetHelper list Set.empty
 --
 --
---filterForPawns player piece ( position, gameSquare ) =
---    case gameSquare of
+--filterForPawns player piece ( position, square ) =
+--    case square of
 --        Occupied _ _ ->
 --            True
 --
@@ -617,11 +617,11 @@ space player model moves =
 piecesByPlayer : Player -> Model -> List Piece
 piecesByPlayer player model =
     let
-        p : List ( Position, GameSquare )
+        p : List ( Position, Square )
         p =
             findPiecesBy (piecesByPlayerPredicate player) model.board
 
-        foo : List GameSquare
+        foo : List Square
         foo =
             List.map (\( x, y ) -> y) p
 
@@ -671,16 +671,16 @@ pieceTotalPrice player model moves =
 
 
 type alias PiecePredicate =
-    ( Position, GameSquare ) -> Bool
+    ( Position, Square ) -> Bool
 
 
 
 -- Some useful piece predicates
 
 
-piecesByPlayerPredicate : Player -> ( Position, GameSquare ) -> Bool
-piecesByPlayerPredicate player ( position, gameSquare ) =
-    case gameSquare of
+piecesByPlayerPredicate : Player -> ( Position, Square ) -> Bool
+piecesByPlayerPredicate player ( position, square ) =
+    case square of
         Vacant ->
             False
 
@@ -688,17 +688,17 @@ piecesByPlayerPredicate player ( position, gameSquare ) =
             player == plyr
 
 
-toFlatIndexedList : Board -> List ( Int, GameSquare )
+toFlatIndexedList : Board -> List ( Int, Square )
 toFlatIndexedList board =
     List.indexedMap (\i n -> ( i, n )) (List.concat (List.map Array.toList (Array.toList board)))
 
 
-toPositionTuple : ( Int, GameSquare ) -> ( Position, GameSquare )
-toPositionTuple ( index, gameSquare ) =
-    ( OnBoard { x = remainderBy 8 (index + 8), y = index // 8 }, gameSquare )
+toPositionTuple : ( Int, Square ) -> ( Position, Square )
+toPositionTuple ( index, square ) =
+    ( OnBoard { x = remainderBy 8 (index + 8), y = index // 8 }, square )
 
 
-findPiecesBy : PiecePredicate -> Board -> List ( Position, GameSquare )
+findPiecesBy : PiecePredicate -> Board -> List ( Position, Square )
 findPiecesBy predicate board =
     let
         listOfTuples =
@@ -743,20 +743,20 @@ translateCoordinate facing coordinate =
             { x = coordinate.x - 1, y = coordinate.y + 1 }
 
 
-getGameSquareByRow : Int -> Row -> Maybe GameSquare
-getGameSquareByRow row columnArray =
+getSquareByRow : Int -> Row -> Maybe Square
+getSquareByRow row columnArray =
     Array.get row columnArray
 
 
-getGameSquare : Coordinate -> Board -> Maybe GameSquare
-getGameSquare coordinate board =
+getSquare : Coordinate -> Board -> Maybe Square
+getSquare coordinate board =
     let
         row =
             Array.get coordinate.y board
     in
     case row of
         Just value ->
-            getGameSquareByRow coordinate.x value
+            getSquareByRow coordinate.x value
 
         _ ->
             Nothing
@@ -765,11 +765,11 @@ getGameSquare coordinate board =
 calculateUnderBombardmentByPlayer : Player -> Board -> Set ( Int, Int )
 calculateUnderBombardmentByPlayer player board =
     let
-        listOfTuples : List ( Position, GameSquare )
+        listOfTuples : List ( Position, Square )
         listOfTuples =
             toFlatIndexedList board |> List.map toPositionTuple
 
-        isPlayerAndArtillery : ( Position, GameSquare ) -> Bool
+        isPlayerAndArtillery : ( Position, Square ) -> Bool
         isPlayerAndArtillery ( _, square ) =
             case square of
                 Occupied player_ piece ->
@@ -778,7 +778,7 @@ calculateUnderBombardmentByPlayer player board =
                 _ ->
                     False
 
-        artilleryPieces : List ( Position, GameSquare )
+        artilleryPieces : List ( Position, Square )
         artilleryPieces =
             List.filter isPlayerAndArtillery listOfTuples
 
@@ -796,7 +796,7 @@ calculateUnderBombardmentByPlayer player board =
     result
 
 
-bombardedCoordinatesFromPiece : ( Position, GameSquare ) -> List Coordinate
+bombardedCoordinatesFromPiece : ( Position, Square ) -> List Coordinate
 bombardedCoordinatesFromPiece ( position, square ) =
     let
         twoSteps direction p =
@@ -849,7 +849,7 @@ underBombardmentByPlayer player coordinate model =
 
 isVacantAtCoordinate : Board -> Coordinate -> Bool
 isVacantAtCoordinate board coordinate =
-    case getGameSquare coordinate board of
+    case getSquare coordinate board of
         Just square ->
             case square of
                 Vacant ->
@@ -918,9 +918,9 @@ longMoves model coordinate =
     validShortMoves ++ validLongMoves
 
 
-isVacant : GameSquare -> Bool
-isVacant gameSquare =
-    gameSquare == Vacant
+isVacant : Square -> Bool
+isVacant square =
+    square == Vacant
 
 
 allAttackFree : Player -> Position -> Position -> Position -> Board -> Bool
@@ -962,12 +962,12 @@ allUnoccupiedSpaces model =
             in
             List.concatMap foo (List.range 0 7)
 
-        allSquares : List ( Coordinate, GameSquare )
+        allSquares : List ( Coordinate, Square )
         allSquares =
             let
-                foo : Coordinate -> Maybe ( Coordinate, GameSquare )
+                foo : Coordinate -> Maybe ( Coordinate, Square )
                 foo c =
-                    case ( c, getGameSquare c model.board ) of
+                    case ( c, getSquare c model.board ) of
                         ( _, Just yy ) ->
                             Just ( c, yy )
 
@@ -1003,7 +1003,7 @@ onHomeRow player coordinate =
 --            moveFunc position
 --
 --        maybeSquare =
---            getGameSquare (moveFunc position) board
+--            getSquare (moveFunc position) board
 --    in
 --    case maybeSquare of
 --        Just value ->
@@ -1022,8 +1022,8 @@ onHomeRow player coordinate =
 --            accum
 
 
-setGameSquare : Coordinate -> GameSquare -> Model -> Model
-setGameSquare coordinate gameSquare model =
+setSquare : Coordinate -> Square -> Model -> Model
+setSquare coordinate square model =
     let
         board =
             model.board
@@ -1040,7 +1040,7 @@ setGameSquare coordinate gameSquare model =
                     in
                     case maybeSquare of
                         Just destSquare ->
-                            Array.set coordinate.y (Array.set coordinate.x gameSquare column) board
+                            Array.set coordinate.y (Array.set coordinate.x square column) board
 
                         Nothing ->
                             board
@@ -1073,7 +1073,7 @@ logList list =
 --            moveFunc position
 --
 --        maybeSquare =
---            getGameSquare (moveFunc position) board
+--            getSquare (moveFunc position) board
 --    in
 --    case maybeSquare of
 --        Just value ->
@@ -1124,12 +1124,12 @@ isOpponentPiece player piece board coordinate =
         other =
             opponent player
 
-        maybeGameSquare =
-            getGameSquare coordinate board
+        maybeSquare =
+            getSquare coordinate board
     in
-    case maybeGameSquare of
-        Just gameSquare ->
-            case gameSquare of
+    case maybeSquare of
+        Just square ->
+            case square of
                 Occupied plr pce ->
                     (plr == other) && (pce == piece)
 
@@ -1140,8 +1140,8 @@ isOpponentPiece player piece board coordinate =
             False
 
 
-validMovesPerPiece : Model -> ( Position, GameSquare ) -> List Move
-validMovesPerPiece model ( position, gameSquare ) =
+validMovesPerPiece : Model -> ( Position, Square ) -> List Move
+validMovesPerPiece model ( position, square ) =
     validMoves position model
         |> List.map (\dest -> ( position, dest ))
 
@@ -1181,7 +1181,7 @@ validMoves position model =
             homeRow player |> filterOnlyVacant model
 
         OnBoard coordinate ->
-            case getGameSquare coordinate model.board of
+            case getSquare coordinate model.board of
                 Nothing ->
                     []
 
@@ -1225,7 +1225,7 @@ filterOnlyVacant model coordinates =
                 Just p2 ->
                     isVacant p2
     in
-    List.filter (\x -> foo (getGameSquare x model.board)) coordinates
+    List.filter (\x -> foo (getSquare x model.board)) coordinates
 
 
 filterDoNotEnterBombarded : Player -> Model -> List Coordinate -> List Coordinate
@@ -1260,7 +1260,7 @@ isEngagedPosition model player coordinate =
 
         checkArtillery : Coordinate -> Bool
         checkArtillery c =
-            case getGameSquare c model.board of
+            case getSquare c model.board of
                 Nothing ->
                     False
 
@@ -1282,9 +1282,9 @@ getOrthogonalNeighbors coordinate =
     ]
 
 
-dropMaybe : Maybe GameSquare -> GameSquare
-dropMaybe gameSquare =
-    case gameSquare of
+dropMaybe : Maybe Square -> Square
+dropMaybe square =
+    case square of
         Just value ->
             value
 
@@ -1298,14 +1298,14 @@ applyMove ( from, to ) model =
         newSquare =
             case from of
                 OnBoard fromCoordinate ->
-                    getGameSquare fromCoordinate model.board |> dropMaybe
+                    getSquare fromCoordinate model.board |> dropMaybe
 
                 Reinforcement player piece ->
                     Occupied player piece
     in
     model
         |> setVacant from
-        |> setGameSquare to newSquare
+        |> setSquare to newSquare
         |> nextTurn
 
 
@@ -1321,7 +1321,7 @@ setVacant position model =
                     { model | blueReinforcements = List.filter (\x -> x /= piece) model.blueReinforcements }
 
         OnBoard coordinate ->
-            setGameSquare coordinate Vacant model
+            setSquare coordinate Vacant model
 
 
 
@@ -1336,10 +1336,10 @@ setVacant position model =
 --            else
 --                7
 --    in
---    setGameSquare (Position x y) Vacant board
---setAdjacentSquare : Int -> Position -> GameSquare -> Board -> Board
---setAdjacentSquare direction position gameSquare board =
---    setGameSquare (Position (position.x + direction) position.y) gameSquare board
+--    setSquare (Position x y) Vacant board
+--setAdjacentSquare : Int -> Position -> Square -> Board -> Board
+--setAdjacentSquare direction position square board =
+--    setSquare (Position (position.x + direction) position.y) square board
 
 
 nextTurn : Model -> Model
@@ -1444,13 +1444,13 @@ type Facing
     | SE
 
 
-type GameSquare
+type Square
     = Vacant
     | Occupied Player Piece
 
 
 type alias Row =
-    Array GameSquare
+    Array Square
 
 
 type alias Board =
@@ -1529,7 +1529,7 @@ logSize moves =
 
 type alias MoveToCompare =
     { dest : Position
-    , destSquare : Maybe GameSquare
+    , destSquare : Maybe Square
     }
 
 
@@ -1663,7 +1663,7 @@ viewReinforcements model player =
 viewRow : Model -> Int -> Row -> Html Msg
 viewRow model y row =
     let
-        foo : Int -> GameSquare -> Html Msg
+        foo : Int -> Square -> Html Msg
         foo x square =
             viewTile model (OnBoard { x = x, y = y }) square
     in
