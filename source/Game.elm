@@ -13,7 +13,6 @@ import Url exposing (Url)
 
 
 
--- TODO: infantry (light, heavy, and paratrooper) can't move from an engaged position to another engaged position
 -- TODO: implement infantry capture
 -- TODO: implement artillery capture
 
@@ -1202,10 +1201,7 @@ validMoves position model =
                                 |> filterOutsideBoard
                                 |> filterOnlyVacant model
                                 |> filterDoNotEnterBombarded player model
-
-
-
---|> filterDoNotGoFromEngagedToEngaged
+                                |> filterDoNotGoFromEngagedToEngaged model player piece coordinate
 
 
 filterOnlyVacant : Model -> List Coordinate -> List Coordinate
@@ -1234,6 +1230,46 @@ filterDoNotEnterBombarded player model coordinates =
                     model.coordinatesBombardedByRed
     in
     List.filter (\p -> not (Set.member ( p.x, p.y ) bombarded)) coordinates
+
+
+filterDoNotGoFromEngagedToEngaged : Model -> Player -> Piece -> Coordinate -> List Coordinate -> List Coordinate
+filterDoNotGoFromEngagedToEngaged model player piece coordinate coordinates =
+    if isInfantry piece && isEngagedPosition model player coordinate then
+        List.filter (\c -> not (isEngagedPosition model player c)) coordinates
+
+    else
+        coordinates
+
+
+isEngagedPosition : Model -> Player -> Coordinate -> Bool
+isEngagedPosition model player coordinate =
+    let
+        orthogonalNeighbors : List Coordinate
+        orthogonalNeighbors =
+            getOrthogonalNeighbors coordinate |> filterOutsideBoard
+
+        checkArtillery : Coordinate -> Bool
+        checkArtillery c =
+            case getGameSquare c model.board of
+                Nothing ->
+                    False
+
+                Just Vacant ->
+                    False
+
+                Just (Occupied player_ piece) ->
+                    player_ == opponent player && isInfantry piece
+    in
+    List.any checkArtillery orthogonalNeighbors
+
+
+getOrthogonalNeighbors : Coordinate -> List Coordinate
+getOrthogonalNeighbors coordinate =
+    [ translateCoordinate N coordinate
+    , translateCoordinate E coordinate
+    , translateCoordinate W coordinate
+    , translateCoordinate S coordinate
+    ]
 
 
 dropMaybe : Maybe GameSquare -> GameSquare
@@ -1365,6 +1401,22 @@ isArtillery p =
             True
 
         Artillery _ _ ->
+            True
+
+        _ ->
+            False
+
+
+isInfantry : Piece -> Bool
+isInfantry p =
+    case p of
+        Infantry _ ->
+            True
+
+        ArmoredInfantry _ ->
+            True
+
+        Paratrooper ->
             True
 
         _ ->
