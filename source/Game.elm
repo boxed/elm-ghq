@@ -281,7 +281,7 @@ px value =
 viewTile : Model -> Position -> GameSquare -> Html Msg
 viewTile model position square =
     let
-        backgroundClass =
+        bombardmentBackgroundClass =
             case position of
                 OnBoard coordinate ->
                     if underBombardmentByPlayer Red coordinate model then
@@ -290,7 +290,16 @@ viewTile model position square =
                     else if underBombardmentByPlayer Blue coordinate model then
                         "blue-bombardment"
 
-                    else if Set.member ( coordinate.x, coordinate.y ) model.hasMoved then
+                    else
+                        ""
+
+                _ ->
+                    ""
+
+        hasMovedBackgroundClass =
+            case position of
+                OnBoard coordinate ->
+                    if Set.member ( coordinate.x, coordinate.y ) model.hasMoved then
                         "has-moved"
 
                     else
@@ -341,7 +350,8 @@ viewTile model position square =
         , style "display" "inline-block"
         , style "color" textColor
         , class borderClass
-        , class backgroundClass
+        , class hasMovedBackgroundClass
+        , class bombardmentBackgroundClass
         ]
         content
 
