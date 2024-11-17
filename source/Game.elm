@@ -120,11 +120,11 @@ main =
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    --if not model.computerThinking && redsTurn model.turn then
-    --    Time.every 50 startEngine
-    --
-    --else
-    Sub.none
+    if not model.computerThinking && redsTurn model.turn then
+        Time.every 50 startEngine
+
+    else
+        Sub.none
 
 
 updateBombardmentPositions : Model -> Model
@@ -156,11 +156,11 @@ update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         PositionClicked position ->
-            --if redsTurn model.turn then
-            --    ( model, Cmd.none )
-            --
-            --else
-            ( processClicked position model |> updateCalculatedBoardData, Cmd.none )
+            if redsTurn model.turn then
+                ( model, Cmd.none )
+
+            else
+                ( processClicked position model |> updateCalculatedBoardData, Cmd.none )
 
         StartEngine ->
             let
@@ -1272,7 +1272,7 @@ nextTurn model =
             { model | turn = BluesTurn Third }
 
         BluesTurn Third ->
-            { model | turn = RedsTurn First, hasMoved = Set.empty }
+            { model | turn = RedsTurn First, hasMoved = Set.empty } |> artilleryCapture
 
         RedsTurn First ->
             { model | turn = RedsTurn Second }
@@ -1281,7 +1281,46 @@ nextTurn model =
             { model | turn = RedsTurn Third }
 
         RedsTurn Third ->
-            { model | turn = BluesTurn First, hasMoved = Set.empty }
+            { model | turn = BluesTurn First, hasMoved = Set.empty } |> artilleryCapture
+
+
+artilleryCapture : Model -> Model
+artilleryCapture model =
+    let
+        currentPlayer =
+            case model.turn of
+                RedsTurn _ ->
+                    Red
+
+                BluesTurn _ ->
+                    Blue
+
+        setVacantIfUnderBombardment : Coordinate -> Square -> Square
+        setVacantIfUnderBombardment coordinate square =
+            if underBombardmentByPlayer currentPlayer coordinate model then
+                case square of
+                    Occupied p _ ->
+                        if p == currentPlayer then
+                            square
+
+                        else
+                            Vacant
+
+                    _ ->
+                        square
+
+            else
+                square
+
+        filterRow : Int -> Row -> Row
+        filterRow y row =
+            Array.indexedMap (\x -> setVacantIfUnderBombardment { x = x, y = y }) row
+
+        board : Board
+        board =
+            Array.indexedMap filterRow model.board
+    in
+    { model | board = board }
 
 
 type Player
@@ -1614,7 +1653,8 @@ view model =
             [ div [] [ viewReinforcements model Red ]
             , div [ style "margin" "20px" ] [ viewBoard model ]
             , div [] [ viewReinforcements model Blue ]
-            , button [ onClick StartEngine ] [ text "next computer move" ]
+
+            --, button [ onClick StartEngine ] [ text "next computer move" ]
             ]
         ]
     }
