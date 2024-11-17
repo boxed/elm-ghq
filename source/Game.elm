@@ -14,7 +14,7 @@ import Url exposing (Url)
 
 
 -- TODO: implement infantry capture
--- TODO: implement artillery capture
+-- TODO: AI logic
 
 
 type alias Model =
@@ -171,8 +171,8 @@ update msg model =
 
         ComputerMove maybeMove ->
             case maybeMove of
-                Just ( srcPosition, destPosition ) ->
-                    ( processMove srcPosition destPosition model, Cmd.none )
+                Just move ->
+                    ( applyMove move model, Cmd.none )
 
                 Nothing ->
                     ( { model | gameOver = True }, Cmd.none )
@@ -215,15 +215,6 @@ updatePotentialMoves model =
             { model | potentialMoves = Set.empty }
 
 
-processMove : Position -> Coordinate -> Model -> Model
-processMove src dest model =
-    let
-        updatedGameModel =
-            applyMove ( src, dest ) model
-    in
-    updatedGameModel
-
-
 markHasMoved : Coordinate -> Model -> Model
 markHasMoved coordinate model =
     { model | hasMoved = Set.insert ( coordinate.x, coordinate.y ) model.hasMoved }
@@ -248,7 +239,7 @@ processClicked position model =
                                     model
 
                                 SelectedPosition selectedPosition ->
-                                    processMove selectedPosition coordinate model |> clearSelected
+                                    applyMove ( selectedPosition, coordinate ) model |> clearSelected
 
                         else
                             model
