@@ -75,7 +75,7 @@ init : Flags -> Url -> Nav.Key -> ( Model, Cmd Msg )
 init flags url navKey =
     ( updateCalculatedBoardData
         { board = startingBoard
-        , turn = BluesTurn First
+        , turn = RedsTurn First
         , potentialMoves = Set.empty
         , coordinatesBombardedByBlue = Set.empty
         , coordinatesBombardedByRed = Set.empty
@@ -120,11 +120,11 @@ main =
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    if not model.computerThinking && not (bluesTurn model.turn) then
-        Time.every 50 startEngine
-
-    else
-        Sub.none
+    --if not model.computerThinking && redsTurn model.turn then
+    --    Time.every 50 startEngine
+    --
+    --else
+    Sub.none
 
 
 updateBombardmentPositions : Model -> Model
@@ -143,23 +143,31 @@ updateCalculatedBoardData model =
 
 
 startEngine : Posix -> Msg
-startEngine time =
+startEngine _ =
     StartEngine
 
 
 executeEngine : Model -> Cmd Msg
 executeEngine model =
-    Task.perform ComputerMove (nextMove model)
+    Task.perform ComputerMove (nextComputerMove model)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         PositionClicked position ->
+            --if redsTurn model.turn then
+            --    ( model, Cmd.none )
+            --
+            --else
             ( processClicked position model |> updateCalculatedBoardData, Cmd.none )
 
         StartEngine ->
-            ( { model | computerThinking = True }, executeEngine model )
+            let
+                newModel =
+                    { model | computerThinking = True }
+            in
+            ( newModel, executeEngine newModel )
 
         ComputerMove maybeMove ->
             case maybeMove of
@@ -187,21 +195,21 @@ squareSize =
     64
 
 
-determineMoves : Position -> Model -> Set ( Int, Int )
-determineMoves position model =
+validMovesFromPositionAsSet : Position -> Model -> Set ( Int, Int )
+validMovesFromPositionAsSet position model =
     let
         toTuple : Coordinate -> ( Int, Int )
         toTuple coordinate =
             ( coordinate.x, coordinate.y )
     in
-    validMoves position model |> List.map toTuple |> Set.fromList
+    validMovesFromPosition position model |> List.map toTuple |> Set.fromList
 
 
 updatePotentialMoves : Model -> Model
 updatePotentialMoves model =
     case model.selected of
         SelectedPosition position ->
-            { model | potentialMoves = determineMoves position model }
+            { model | potentialMoves = validMovesFromPositionAsSet position model }
 
         NoSelection ->
             { model | potentialMoves = Set.empty }
@@ -213,10 +221,7 @@ processMove src dest model =
         updatedGameModel =
             applyMove ( src, dest ) model
     in
-    { updatedGameModel | computerThinking = False }
-        |> clearSelected
-        |> updateCalculatedBoardData
-        |> markHasMoved dest
+    updatedGameModel
 
 
 markHasMoved : Coordinate -> Model -> Model
@@ -235,32 +240,27 @@ processClicked position model =
                 setSelectedPosition position model
 
             OnBoard coordinate ->
-                if Set.member ( coordinate.x, coordinate.y ) model.hasMoved then
-                    model
+                case getSquare coordinate model.board of
+                    Just Vacant ->
+                        if Set.member ( coordinate.x, coordinate.y ) model.potentialMoves then
+                            case model.selected of
+                                NoSelection ->
+                                    model
 
-                else
-                    case getSquare coordinate model.board of
-                        Just Vacant ->
-                            if Set.member ( coordinate.x, coordinate.y ) model.potentialMoves then
-                                case model.selected of
-                                    NoSelection ->
-                                        model
+                                SelectedPosition selectedPosition ->
+                                    processMove selectedPosition coordinate model |> clearSelected
 
-                                    SelectedPosition selectedPosition ->
-                                        processMove selectedPosition coordinate model |> clearSelected
-
-                            else
-                                model
-
-                        Just (Occupied player _) ->
-                            if player == Blue then
-                                setSelectedPosition position model
-
-                            else
-                                model
-
-                        Nothing ->
+                        else
                             model
+
+                    Just (Occupied player _) ->
+                        --if player == Blue then
+                        setSelectedPosition position model
+
+                    --else
+                    --    model
+                    Nothing ->
+                        model
 
 
 bluesTurn : Turn -> Bool
@@ -271,6 +271,11 @@ bluesTurn turn =
 
         _ ->
             False
+
+
+redsTurn : Turn -> Bool
+redsTurn turn =
+    not (bluesTurn turn)
 
 
 px : Int -> String
@@ -427,7 +432,7 @@ type alias EvaluatorFunc =
 
 evaluators : List EvaluatorFunc
 evaluators =
-    [ pieceTotalPrice
+    [ totalPriceOfPieces
 
     --, ( mobility, 0.1 )
     , space
@@ -493,7 +498,7 @@ threats : Player -> Model -> Moves -> Float
 threats player model moves =
     let
         v =
-            List.map (\( src, dest ) -> dest) moves
+            List.map (\( _, dest ) -> dest) moves
                 |> List.filterMap (occupiedBy (opponent player) model.board)
                 |> List.length
                 |> toFloat
@@ -504,93 +509,8 @@ threats player model moves =
     v * weight
 
 
-yComparison a b =
-    let
-        ( posA, sqA ) =
-            a
-
-        ( posB, sqB ) =
-            b
-    in
-    compare posA.y posB.y
-
-
-
---file : Model -> Int -> File
---file model index =
---    findPiecesBy (\( position, square ) -> position.x == index) model.board
---        |> List.sortWith yComparison
---
---
---adjacentFiles : Model -> Int -> ( File, File )
---adjacentFiles model fileIndex =
---    ( file model (fileIndex - 1), file model (fileIndex + 1) )
---
---
---toSetHelper : List ( Position, Square ) -> Set Int -> Set Int
---toSetHelper list set =
---    let
---        hd =
---            List.head list
---    in
---    case hd of
---        Just tuple ->
---            Set.insert (Tuple.first tuple).x set
---
---        Nothing ->
---            set
---toSet : List ( Position, Square ) -> Set Int
---toSet list =
---    toSetHelper list Set.empty
---
---
---filterForPawns player piece ( position, square ) =
---    case square of
---        Occupied _ _ ->
---            True
---
---        _ ->
---            False
---countInFile : File -> Piece -> Player -> Int
---countInFile theFile piece player =
---    List.filter (filterForPawns player piece) theFile
---        |> List.length
---
---
---countIsolated : Player -> ( File, File ) -> Int -> Int
---countIsolated player ( file1, file2 ) accumulator =
---    let
---        count1 =
---            countInFile file1 Pawn player
---
---        count2 =
---            countInFile file2 Pawn player
---    in
---    if count1 + count2 == 0 then
---        accumulator + 1
---
---    else
---        accumulator
---
---
---isolatedArtillery : Player -> model -> Moves -> Float
---isolatedArtillery player model moves =
---    let
---        filesWithArtillery =
---            findPiecesBy (byPlayerPiecePredicate player isArtillery) model.board
---                |> toSet
---                |> Set.toList
---    in
---    List.map (\index -> adjacentFiles model index) filesWithArtillery
---        |> List.foldr (countIsolated player) 0
---        |> toFloat
---
--- A count of how many positions a player can attack on the
--- opponents side
-
-
 space : Player -> Model -> Moves -> Float
-space player model moves =
+space player _ moves =
     let
         offset =
             if player == Red then
@@ -603,7 +523,7 @@ space player model moves =
             0.1
 
         v =
-            List.filter (\( src, dest ) -> dest.y < (8 - offset) && dest.y >= (4 - offset)) moves
+            List.filter (\( _, dest ) -> dest.y < (8 - offset) && dest.y >= (4 - offset)) moves
                 |> List.length
                 |> toFloat
     in
@@ -619,7 +539,7 @@ piecesByPlayer player model =
     let
         p : List ( Position, Square )
         p =
-            findPiecesBy (piecesByPlayerPredicate player) model.board
+            findPiecesOnBoardBy (piecesByPlayerPredicate player) model.board
 
         foo : List Square
         foo =
@@ -661,8 +581,8 @@ priceOfPiece piece =
             500
 
 
-pieceTotalPrice : Player -> Model -> Moves -> Float
-pieceTotalPrice player model moves =
+totalPriceOfPieces : Player -> Model -> Moves -> Float
+totalPriceOfPieces player model moves =
     let
         pieces =
             piecesByPlayer player model
@@ -698,8 +618,8 @@ toPositionTuple ( index, square ) =
     ( OnBoard { x = remainderBy 8 (index + 8), y = index // 8 }, square )
 
 
-findPiecesBy : PiecePredicate -> Board -> List ( Position, Square )
-findPiecesBy predicate board =
+findPiecesOnBoardBy : PiecePredicate -> Board -> List ( Position, Square )
+findPiecesOnBoardBy predicate board =
     let
         listOfTuples =
             toFlatIndexedList board |> List.map toPositionTuple
@@ -1140,19 +1060,18 @@ isOpponentPiece player piece board coordinate =
             False
 
 
-validMovesPerPiece : Model -> ( Position, Square ) -> List Move
-validMovesPerPiece model ( position, square ) =
-    validMoves position model
-        |> List.map (\dest -> ( position, dest ))
-
-
 allAvailableMoves : Player -> Model -> List Move
 allAvailableMoves player model =
     let
+        validMovesPerPiece : ( Position, Square ) -> List Move
+        validMovesPerPiece ( position, square ) =
+            validMovesFromPosition position model
+                |> List.map (\to -> ( position, to ))
+
         pieces =
-            findPiecesBy (piecesByPlayerPredicate player) model.board
+            findPiecesOnBoardBy (piecesByPlayerPredicate player) model.board
     in
-    List.map (validMovesPerPiece model) pieces
+    List.map validMovesPerPiece pieces
         |> List.concat
 
 
@@ -1174,8 +1093,8 @@ homeRow player =
             bluesHomeRow
 
 
-validMoves : Position -> Model -> List Coordinate
-validMoves position model =
+validMovesFromPosition : Position -> Model -> List Coordinate
+validMovesFromPosition position model =
     case position of
         Reinforcement player _ ->
             homeRow player |> filterOnlyVacant model
@@ -1208,6 +1127,7 @@ validMoves position model =
                                             shortMoves coordinate
                             in
                             rawMoves
+                                |> filterHasAlreadyMoved coordinate model
                                 |> filterOutsideBoard
                                 |> filterOnlyVacant model
                                 |> filterDoNotEnterBombarded player model
@@ -1246,6 +1166,15 @@ filterDoNotGoFromEngagedToEngaged : Model -> Player -> Piece -> Coordinate -> Li
 filterDoNotGoFromEngagedToEngaged model player piece coordinate coordinates =
     if isInfantry piece && isEngagedPosition model player coordinate then
         List.filter (\c -> not (isEngagedPosition model player c)) coordinates
+
+    else
+        coordinates
+
+
+filterHasAlreadyMoved : Coordinate -> Model -> List Coordinate -> List Coordinate
+filterHasAlreadyMoved coordinate model coordinates =
+    if Set.member ( coordinate.x, coordinate.y ) model.hasMoved then
+        []
 
     else
         coordinates
@@ -1306,7 +1235,16 @@ applyMove ( from, to ) model =
     model
         |> setVacant from
         |> setSquare to newSquare
+        |> markHasMoved to
+        |> updateCalculatedBoardData
+        |> clearSelected
         |> nextTurn
+        |> turnComputerThinkingOff
+
+
+turnComputerThinkingOff : Model -> Model
+turnComputerThinkingOff model =
+    { model | computerThinking = False }
 
 
 setVacant : Position -> Model -> Model
@@ -1322,24 +1260,6 @@ setVacant position model =
 
         OnBoard coordinate ->
             setSquare coordinate Vacant model
-
-
-
---
---setVacant : Player -> Int -> Board -> Board
---setVacant player x board =
---    let
---        y =
---                   if player == Red then
---                0
---
---            else
---                7
---    in
---    setSquare (Position x y) Vacant board
---setAdjacentSquare : Int -> Position -> Square -> Board -> Board
---setAdjacentSquare direction position square board =
---    setSquare (Position (position.x + direction) position.y) square board
 
 
 nextTurn : Model -> Model
@@ -1486,12 +1406,15 @@ type Turn
     | RedsTurn SubTurn
 
 
-nextMove : Model -> Task x (Maybe Move)
-nextMove model =
+nextComputerMove : Model -> Task x (Maybe Move)
+nextComputerMove model =
     let
-        ( score, move ) =
+        appliedPossibleMoves =
             List.map (\m -> ( applyMove m model, m )) (nextMoves model)
-                |> List.foldr executeMin ( -1000.0, dummyMove )
+
+        -- Try all future worlds and check which is the best
+        ( score, move ) =
+            List.foldr executeMin ( -1000.0, dummyMove ) appliedPossibleMoves
     in
     if move == dummyMove then
         Task.succeed Nothing
@@ -1691,6 +1614,7 @@ view model =
             [ div [] [ viewReinforcements model Red ]
             , div [ style "margin" "20px" ] [ viewBoard model ]
             , div [] [ viewReinforcements model Blue ]
+            , button [ onClick StartEngine ] [ text "next computer move" ]
             ]
         ]
     }
